@@ -4,294 +4,761 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BlueSky Graph Tool — AT Protocol Analytics & Auto-Follow</title>
+  <title>Graph Tool — Network Analytics & Management</title>
   <meta name="description"
-    content="Analyze any Bluesky account's social graph and auto-follow their followers or following list using the AT Protocol API." />
+    content="Explore social graphs, analyze network connections, and manage your following list with a powerful analytics dashboard." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap"
     rel="stylesheet" />
   <link rel="stylesheet" href="index.css" />
 </head>
 
 <body>
 
-  <!-- Background orbs -->
-  <div class="bg-orb orb-1"></div>
-  <div class="bg-orb orb-2"></div>
-  <div class="bg-orb orb-3"></div>
+  <!-- Neo-Brutalist layout -->
 
   <div class="app-wrapper">
 
     <!-- ───────────── HEADER ───────────── -->
     <header class="app-header">
-      <div class="logo">
-        <div class="logo-icon">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"
-              fill="currentColor" />
-          </svg>
+      <div class="header-top">
+        <div class="logo">
+          <div class="logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"
+                fill="currentColor" />
+            </svg>
+          </div>
+          <div class="logo-text">
+            <span class="logo-title">BlueSky Graph</span>
+            <span class="logo-sub">AT Protocol Analytics</span>
+          </div>
         </div>
-        <div class="logo-text">
-          <span class="logo-title">BlueSky Graph</span>
-          <span class="logo-sub">AT Protocol Analytics</span>
+        <div class="header-status" id="headerStatus">
+          <span class="status-dot offline"></span>
+          <span id="headerStatusText">Not connected</span>
         </div>
       </div>
-      <div class="header-status" id="headerStatus">
-        <span class="status-dot offline"></span>
-        <span id="headerStatusText">Not connected</span>
+      <nav class="tab-nav" id="tabNav">
+        <button class="tab-btn active" data-view="dashboard">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Dashboard
+        </button>
+        <button class="tab-btn" data-view="profile">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"
+              fill="currentColor" />
+          </svg>
+          Profile
+        </button>
+        <button class="tab-btn" data-view="scheduler">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+            <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" />
+          </svg>
+          Scheduler
+        </button>
+      </nav>
+      <div id="rateLimitBar"
+        style="display:flex; background: var(--yellow); padding: 6px 24px; font-size: 0.75rem; border-top: var(--border-w) solid var(--border); font-weight: bold; align-items: center; justify-content: space-between;">
+        <span style="display:flex; align-items:center; gap:6px;">
+          <svg viewBox="0 0 24 24" fill="none" style="width:14px; height:14px;">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" />
+          </svg>
+          API STATUS
+        </span>
+        <span>
+          LIMIT: <span id="rateLimitRemaining">--</span> / <span id="rateLimitTotal">5000</span>
+          &nbsp;&bull;&nbsp;
+          RESETS: <span id="rateLimitReset">--:--</span>
+        </span>
       </div>
     </header>
 
     <main class="app-main">
 
-      <!-- ───────────── LOGIN PANEL ───────────── -->
-      <section class="panel glass" id="loginPanel">
-        <div class="panel-header">
-          <h2 class="panel-title">
-            <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"
-                fill="currentColor" />
-            </svg>
-            Connect to Bluesky
-          </h2>
-          <p class="panel-desc">Use an <a href="https://bsky.app/settings/app-passwords" target="_blank"
-              rel="noopener">App Password</a> — never your main password.</p>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label" for="inputHandle">Your Handle</label>
-            <input class="form-input" id="inputHandle" type="text" placeholder="you.bsky.social"
-              autocomplete="username" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="inputPassword">App Password</label>
-            <input class="form-input" id="inputPassword" type="password" placeholder="xxxx-xxxx-xxxx-xxxx"
-              autocomplete="current-password" />
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" id="btnLogin">
-            <span class="btn-text">Connect</span>
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
-              <path d="M13 7l5 5-5 5M6 12h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                stroke-linejoin="round" />
-            </svg>
-          </button>
-          <button class="btn btn-ghost" id="btnLogout" style="display:none">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
-              <path d="M17 16l4-4-4-4M7 12h12M3 12v8a1 1 0 001 1h8a1 1 0 001-1v-2" stroke="currentColor"
-                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            Disconnect
-          </button>
-        </div>
-        <div id="loginMsg" class="msg" style="display:none"></div>
+      <!-- ═══════════ VIEW: DASHBOARD ═══════════ -->
+      <div id="viewDashboard" class="view-section">
 
-        <!-- Connected user info -->
-        <div id="connectedUser" class="connected-block" style="display:none">
-          <img id="connectedAvatar" class="connected-avatar" src="" alt="" />
-          <div class="connected-info">
-            <span id="connectedName" class="connected-name"></span>
-            <span id="connectedHandle" class="connected-handle"></span>
-          </div>
-          <div class="connected-stats">
-            <div class="mini-stat"><span id="connectedFollowers">—</span><small>Followers</small></div>
-            <div class="mini-stat"><span id="connectedFollowing">—</span><small>Following</small></div>
-            <div class="mini-stat"><span id="connectedPosts">—</span><small>Posts</small></div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ───────────── LOOKUP PANEL ───────────── -->
-      <section class="panel glass" id="lookupPanel">
-        <div class="panel-header">
-          <h2 class="panel-title">
-            <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
-              <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2" />
-              <path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-            </svg>
-            Lookup Social Graph
-          </h2>
-          <p class="panel-desc">Enter any Bluesky handle or DID to analyze their network.</p>
-        </div>
-        <div class="form-row">
-          <div class="form-group flex-2">
-            <label class="form-label" for="inputTarget">Target Handle or DID</label>
-            <input class="form-input" id="inputTarget" type="text" placeholder="handle.bsky.social  or  did:plc:..." />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="selectSource">Fetch</label>
-            <select class="form-input form-select" id="selectSource">
-              <optgroup label="Harvest Accounts to Follow">
-                <option value="followers">Target's Followers</option>
-                <option value="followers_non_mutuals">Target's Followers (not following me)</option>
-                <option value="following">Target's Following</option>
-                <option value="following_non_mutuals">Target's Following (not following me)</option>
-              </optgroup>
-              <optgroup label="Analytics & Unfollowing">
-                <option value="my_non_mutuals">My Non-Mutuals (people I follow who don't follow me back)</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="inputLimit">Max Results</label>
-            <select class="form-input form-select" id="inputLimit">
-              <option value="100">100</option>
-              <option value="500">500</option>
-              <option value="1000" selected>1 000</option>
-              <option value="2000">2 000</option>
-              <option value="5000">5 000</option>
-              <option value="10000">10 000</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" id="btnFetch">
-            <span class="btn-text">Fetch Graph</span>
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
-              <path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M16 6l-4-4-4 4M12 2v13" stroke="currentColor"
-                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-          <div class="fetch-progress-wrap" id="fetchProgressWrap" style="display:none">
-            <div class="mini-progress">
-              <div class="mini-progress-bar" id="fetchProgressBar"></div>
-            </div>
-            <span id="fetchProgressText" class="progress-text">Fetching…</span>
-          </div>
-        </div>
-        <div id="lookupMsg" class="msg" style="display:none"></div>
-      </section>
-
-      <!-- ───────────── RESULTS PANEL ───────────── -->
-      <section class="panel glass wide" id="resultsPanel" style="display:none">
-        <div class="panel-header results-header">
-          <div>
+        <!-- ───────────── LOGIN PANEL ───────────── -->
+        <section class="panel glass" id="loginPanel">
+          <div class="panel-header">
             <h2 class="panel-title">
               <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
                 <path
-                  d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
+                  d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"
+                  fill="currentColor" />
+              </svg>
+              Connect to Bluesky
+            </h2>
+            <p class="panel-desc">Use an <a href="https://bsky.app/settings/app-passwords" target="_blank"
+                rel="noopener">App Password</a> — never your main password.</p>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="inputHandle">Your Handle</label>
+              <input class="form-input" id="inputHandle" type="text" placeholder="you.bsky.social"
+                autocomplete="username" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="inputPassword">App Password</label>
+              <input class="form-input" id="inputPassword" type="password" placeholder="xxxx-xxxx-xxxx-xxxx"
+                autocomplete="current-password" />
+            </div>
+          </div>
+          <div class="remember-me-row">
+            <label class="checkbox-label" for="chkRememberMe">
+              <input type="checkbox" id="chkRememberMe" />
+              Remember me
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="btnLogin">
+              <span class="btn-text">Connect</span>
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                <path d="M13 7l5 5-5 5M6 12h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button class="btn btn-ghost" id="btnLogout" style="display:none">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                <path d="M17 16l4-4-4-4M7 12h12M3 12v8a1 1 0 001 1h8a1 1 0 001-1v-2" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Disconnect
+            </button>
+          </div>
+          <div id="loginMsg" class="msg" style="display:none"></div>
+
+          <!-- Connected user info -->
+          <div id="connectedUser" class="connected-block" style="display:none">
+            <img id="connectedAvatar" class="connected-avatar" src="" alt="" />
+            <div class="connected-info">
+              <span id="connectedName" class="connected-name"></span>
+              <span id="connectedHandle" class="connected-handle"></span>
+            </div>
+            <div class="connected-stats">
+              <div class="mini-stat"><span id="connectedFollowers">—</span><small>Followers</small></div>
+              <div class="mini-stat"><span id="connectedFollowing">—</span><small>Following</small></div>
+              <div class="mini-stat"><span id="connectedPosts">—</span><small>Posts</small></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ───────────── ANALYTICS PANEL ───────────── -->
+        <section class="panel glass wide" id="analyticsPanel" style="display:none">
+          <div class="panel-header analytics-header">
+            <div>
+              <h2 class="panel-title">
+                <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 20V10M12 20V4M6 20v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+                Post Analytics
+              </h2>
+              <p class="panel-desc" id="analyticsDesc">Insights from your recent posts.</p>
+            </div>
+            <div class="analytics-controls">
+              <div class="form-group">
+                <label class="form-label" for="analyticsLimit">Posts to scan</label>
+                <select class="form-input form-select" id="analyticsLimit">
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                  <option value="500" selected>500</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="btnLoadAnalytics">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 20V10M12 20V4M6 20v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+                <span class="btn-text">Load Analytics</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="analytics-progress-wrap" id="analyticsProgressWrap" style="display:none">
+            <div class="mini-progress">
+              <div class="mini-progress-bar" id="analyticsProgressBar"></div>
+            </div>
+            <span id="analyticsProgressText" class="progress-text">Fetching posts…</span>
+          </div>
+
+          <div id="analyticsContent" style="display:none">
+            <!-- Aggregate Stats -->
+            <div class="analytics-stats-grid">
+              <div class="stat-card analytics-stat">
+                <span id="anTotalPosts">0</span>
+                <small>Posts Scanned</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="anTotalLikes">0</span>
+                <small>Total Likes</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="anTotalReposts">0</span>
+                <small>Total Reposts</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="anTotalReplies">0</span>
+                <small>Total Replies</small>
+              </div>
+              <div class="stat-card analytics-stat highlight">
+                <span id="anAvgEngagement">0</span>
+                <small>Avg Engagement</small>
+              </div>
+              <div class="stat-card analytics-stat highlight">
+                <span id="anEngagementRate">0%</span>
+                <small>Eng. Rate</small>
+              </div>
+            </div>
+
+            <!-- Engagement Breakdown Bars -->
+            <div class="analytics-section">
+              <h3 class="analytics-section-title">Engagement Breakdown</h3>
+              <div class="engagement-bars">
+                <div class="engagement-bar-row">
+                  <span class="bar-label">Likes</span>
+                  <div class="bar-track">
+                    <div class="bar-fill bar-likes" id="barLikes" style="width:0%"></div>
+                  </div>
+                  <span class="bar-value" id="barLikesVal">0</span>
+                </div>
+                <div class="engagement-bar-row">
+                  <span class="bar-label">Reposts</span>
+                  <div class="bar-track">
+                    <div class="bar-fill bar-reposts" id="barReposts" style="width:0%"></div>
+                  </div>
+                  <span class="bar-value" id="barRepostsVal">0</span>
+                </div>
+                <div class="engagement-bar-row">
+                  <span class="bar-label">Replies</span>
+                  <div class="bar-track">
+                    <div class="bar-fill bar-replies" id="barReplies" style="width:0%"></div>
+                  </div>
+                  <span class="bar-value" id="barRepliesVal">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Posting Activity -->
+            <div class="analytics-section">
+              <h3 class="analytics-section-title">Posting Activity</h3>
+              <div class="activity-summary" id="activitySummary"></div>
+              <div class="activity-grid" id="activityGrid"></div>
+            </div>
+
+            <!-- Top Posts -->
+            <div class="analytics-section">
+              <h3 class="analytics-section-title">Top Posts by Engagement</h3>
+              <div class="top-posts-list" id="topPostsList"></div>
+            </div>
+          </div>
+
+          <div id="analyticsMsg" class="msg" style="display:none"></div>
+        </section>
+
+        <!-- ───────────── LOOKUP PANEL ───────────── -->
+        <section class="panel glass" id="lookupPanel">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2" />
+                <path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              Lookup Social Graph
+            </h2>
+            <p class="panel-desc">Enter any Bluesky handle or DID to analyze their network.</p>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label class="form-label" for="inputTarget">Target Handle or DID</label>
+              <input class="form-input" id="inputTarget" type="text"
+                placeholder="handle.bsky.social  or  did:plc:..." />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="selectSource">Fetch</label>
+              <select class="form-input form-select" id="selectSource">
+                <optgroup label="Harvest Accounts to Follow">
+                  <option value="followers">Target's Followers</option>
+                  <option value="followers_non_mutuals">Target's Followers (not following me)</option>
+                  <option value="following">Target's Following</option>
+                  <option value="following_non_mutuals">Target's Following (not following me)</option>
+                </optgroup>
+                <optgroup label="Analytics & Unfollowing">
+                  <option value="my_non_mutuals">My Non-Mutuals (people I follow who don't follow me back)</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="inputLimit">Max Results</label>
+              <select class="form-input form-select" id="inputLimit">
+                <option value="100">100</option>
+                <option value="500">500</option>
+                <option value="1000" selected>1 000</option>
+                <option value="2000">2 000</option>
+                <option value="5000">5 000</option>
+                <option value="10000">10 000</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="btnFetch">
+              <span class="btn-text">Fetch Graph</span>
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                <path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M16 6l-4-4-4 4M12 2v13" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <div class="fetch-progress-wrap" id="fetchProgressWrap" style="display:none">
+              <div class="mini-progress">
+                <div class="mini-progress-bar" id="fetchProgressBar"></div>
+              </div>
+              <span id="fetchProgressText" class="progress-text">Fetching…</span>
+            </div>
+          </div>
+          <div id="lookupMsg" class="msg" style="display:none"></div>
+        </section>
+
+        <!-- ───────────── RESULTS PANEL ───────────── -->
+        <section class="panel glass wide" id="resultsPanel" style="display:none">
+          <div class="panel-header results-header">
+            <div>
+              <h2 class="panel-title">
+                <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Results
+              </h2>
+              <p class="panel-desc" id="resultsDesc">— accounts found</p>
+            </div>
+            <div class="results-controls">
+              <input class="form-input search-input" id="inputSearch" type="search"
+                placeholder="🔍  Filter by name or handle…" />
+              <label class="checkbox-label" for="chkHideFollowing">
+                <input type="checkbox" id="chkHideFollowing" />
+                Hide already following
+              </label>
+              <button class="btn btn-sm btn-ghost" id="btnSelectAll">Select All</button>
+              <button class="btn btn-sm btn-ghost" id="btnDeselectAll">None</button>
+              <div class="divider"></div>
+              <button class="btn btn-sm btn-success top-action-btn" id="btnTopAutoFollow" disabled>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Follow (0)
+              </button>
+              <button class="btn btn-sm btn-danger top-action-btn" id="btnTopAutoUnfollow" style="display:none"
+                disabled>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 11h-6"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Unfollow (0)
+              </button>
+            </div>
+          </div>
+
+          <div class="user-grid" id="userGrid"></div>
+
+          <div class="load-more-wrap" id="loadMoreWrap" style="display:none">
+            <button class="btn btn-ghost" id="btnLoadMore">Load More</button>
+          </div>
+        </section>
+
+        <!-- ───────────── AUTO-FOLLOW PANEL ───────────── -->
+        <section class="panel glass wide" id="autoFollowPanel" style="display:none">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"
                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              Results
+              Auto-Follow / Unfollow
             </h2>
-            <p class="panel-desc" id="resultsDesc">— accounts found</p>
+            <p class="panel-desc">Batch action on selected accounts with rate-limiting and dry-run safety.</p>
           </div>
-          <div class="results-controls">
-            <input class="form-input search-input" id="inputSearch" type="search"
-              placeholder="🔍  Filter by name or handle…" />
-            <label class="checkbox-label" for="chkHideFollowing">
-              <input type="checkbox" id="chkHideFollowing" />
-              Hide already following
-            </label>
-            <button class="btn btn-sm btn-ghost" id="btnSelectAll">Select All</button>
-            <button class="btn btn-sm btn-ghost" id="btnDeselectAll">None</button>
-            <div class="divider"></div>
-            <button class="btn btn-sm btn-success top-action-btn" id="btnTopAutoFollow" disabled>
+
+          <div class="follow-controls">
+            <div class="form-group">
+              <label class="form-label" for="rangeDelay">Delay between actions: <strong id="delayLabel">1000
+                  ms</strong></label>
+              <input type="range" id="rangeDelay" min="200" max="3000" step="100" value="1000" class="range-input" />
+            </div>
+
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <input type="checkbox" id="chkDryRun" class="toggle-input" />
+                <span class="toggle-track">
+                  <span class="toggle-thumb"></span>
+                </span>
+                <span class="toggle-text">Dry Run <small>(no real actions)</small></span>
+              </label>
+            </div>
+
+            <div class="follow-stats-row">
+              <div class="stat-card"><span id="statSelected">0</span><small>Selected</small></div>
+              <div class="stat-card"><span id="statActioned">0</span><small>Success</small></div>
+              <div class="stat-card"><span id="statSkipped">0</span><small>Skipped</small></div>
+              <div class="stat-card"><span id="statErrors">0</span><small>Errors</small></div>
+            </div>
+          </div>
+
+          <div class="follow-progress-wrap" id="followProgressWrap" style="display:none">
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="followProgressBar"></div>
+              <span class="progress-bar-text" id="followProgressPct">0%</span>
+            </div>
+          </div>
+
+          <div class="form-actions mt-8">
+            <button class="btn btn-success" id="btnAutoFollow">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
                 <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"
                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              Follow (0)
+              <span class="btn-text">Start Auto-Follow</span>
             </button>
-            <button class="btn btn-sm btn-danger top-action-btn" id="btnTopAutoUnfollow" style="display:none" disabled>
+            <button class="btn btn-danger" id="btnAutoUnfollow" style="display:none">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
                 <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 11h-6"
                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              Unfollow (0)
+              <span class="btn-text">Start Auto-Unfollow</span>
+            </button>
+            <button class="btn btn-danger" id="btnStopAction" style="display:none">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+              </svg>
+              Stop
             </button>
           </div>
-        </div>
 
-        <div class="user-grid" id="userGrid"></div>
+          <div id="actionMsg" class="msg" style="display:none"></div>
 
-        <div class="load-more-wrap" id="loadMoreWrap" style="display:none">
-          <button class="btn btn-ghost" id="btnLoadMore">Load More</button>
-        </div>
-      </section>
+          <!-- Live log -->
+          <div class="log-section" id="logSection" style="display:none">
+            <div class="log-header">
+              <span>Live Log</span>
+              <button class="btn btn-sm btn-ghost" id="btnClearLog">Clear</button>
+            </div>
+            <pre class="log-console" id="logConsole"></pre>
+          </div>
+        </section>
 
-      <!-- ───────────── AUTO-FOLLOW PANEL ───────────── -->
-      <section class="panel glass wide" id="autoFollowPanel" style="display:none">
-        <div class="panel-header">
-          <h2 class="panel-title">
-            <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
-              <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            Auto-Follow / Unfollow
-          </h2>
-          <p class="panel-desc">Batch action on selected accounts with rate-limiting and dry-run safety.</p>
-        </div>
+      </div><!-- end viewDashboard -->
 
-        <div class="follow-controls">
-          <div class="form-group">
-            <label class="form-label" for="rangeDelay">Delay between actions: <strong id="delayLabel">1000
-                ms</strong></label>
-            <input type="range" id="rangeDelay" min="200" max="3000" step="100" value="1000" class="range-input" />
+      <!-- ═══════════ VIEW: PROFILE ═══════════ -->
+      <div id="viewProfile" class="view-section" style="display:none">
+
+        <section class="panel glass wide">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"
+                  fill="currentColor" />
+              </svg>
+              Account Health
+            </h2>
+            <p class="panel-desc">Scan your full follower/following graph to see your account health.</p>
+          </div>
+          <div class="form-actions" style="margin-bottom:16px">
+            <button class="btn btn-primary" id="btnScanHealth">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+              <span class="btn-text">Scan Account</span>
+            </button>
           </div>
 
-          <div class="toggle-group">
-            <label class="toggle-label">
-              <input type="checkbox" id="chkDryRun" checked class="toggle-input" />
-              <span class="toggle-track">
-                <span class="toggle-thumb"></span>
-              </span>
-              <span class="toggle-text">Dry Run <small>(no real actions)</small></span>
-            </label>
+          <div class="analytics-progress-wrap" id="healthProgressWrap" style="display:none">
+            <div class="mini-progress">
+              <div class="mini-progress-bar" id="healthProgressBar"></div>
+            </div>
+            <span id="healthProgressText" class="progress-text">Scanning…</span>
           </div>
 
-          <div class="follow-stats-row">
-            <div class="stat-card"><span id="statSelected">0</span><small>Selected</small></div>
-            <div class="stat-card"><span id="statActioned">0</span><small>Success</small></div>
-            <div class="stat-card"><span id="statSkipped">0</span><small>Skipped</small></div>
-            <div class="stat-card"><span id="statErrors">0</span><small>Errors</small></div>
+          <div id="healthContent" style="display:none">
+            <div class="analytics-stats-grid" style="margin-bottom:24px">
+              <div class="stat-card analytics-stat">
+                <span id="healthFollowers">0</span>
+                <small>Followers</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="healthFollowing">0</span>
+                <small>Following</small>
+              </div>
+              <div class="stat-card analytics-stat highlight">
+                <span id="healthMutuals">0</span>
+                <small>Mutuals</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="healthNonMutuals">0</span>
+                <small>Non-Mutuals</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="healthGhosts">0</span>
+                <small>Ghost Followers</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="healthBlocked">0</span>
+                <small>Blocked</small>
+              </div>
+            </div>
+
+            <!-- Non-mutuals unfollow section -->
+            <div class="analytics-section">
+              <div class="profile-section-header">
+                <h3 class="analytics-section-title">Non-Mutuals — You follow, they don't follow back</h3>
+                <div class="profile-section-controls">
+                  <button class="btn btn-sm btn-ghost" id="btnProfileSelectAll">Select All</button>
+                  <button class="btn btn-sm btn-ghost" id="btnProfileDeselectAll">None</button>
+                  <button class="btn btn-sm btn-danger" id="btnProfileUnfollow" disabled>
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                      <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 11h-6"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    Unfollow (<span id="profileSelectedCount">0</span>)
+                  </button>
+                </div>
+              </div>
+              <div class="user-grid" id="profileNonMutualGrid"></div>
+            </div>
           </div>
-        </div>
 
-        <div class="follow-progress-wrap" id="followProgressWrap" style="display:none">
-          <div class="progress-bar-track">
-            <div class="progress-bar-fill" id="followProgressBar"></div>
-            <span class="progress-bar-text" id="followProgressPct">0%</span>
+          <div id="healthMsg" class="msg" style="display:none"></div>
+
+          <!-- Profile unfollow log -->
+          <div class="log-section" id="profileLogSection" style="display:none">
+            <div class="log-header">
+              <span>Unfollow Log</span>
+              <button class="btn btn-sm btn-ghost" id="btnProfileClearLog">Clear</button>
+            </div>
+            <pre class="log-console" id="profileLogConsole"></pre>
           </div>
-        </div>
+        </section>
 
-        <div class="form-actions mt-8">
-          <button class="btn btn-success" id="btnAutoFollow">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
-              <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <span class="btn-text">Start Auto-Follow</span>
-          </button>
-          <button class="btn btn-danger" id="btnAutoUnfollow" style="display:none">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
-              <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 11h-6"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <span class="btn-text">Start Auto-Unfollow</span>
-          </button>
-          <button class="btn btn-danger" id="btnStopAction" style="display:none">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
-              <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
-            </svg>
-            Stop
-          </button>
-        </div>
+      </div><!-- end viewProfile -->
 
-        <div id="actionMsg" class="msg" style="display:none"></div>
+      <!-- ═══════════ VIEW: SCHEDULER ═══════════ -->
+      <div id="viewScheduler" class="view-section" style="display:none">
 
-        <!-- Live log -->
-        <div class="log-section" id="logSection" style="display:none">
-          <div class="log-header">
-            <span>Live Log</span>
-            <button class="btn btn-sm btn-ghost" id="btnClearLog">Clear</button>
+        <!-- Post Scheduler Section -->
+        <section class="panel glass wide" style="margin-bottom: 24px;">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Schedule a Post
+            </h2>
+            <p class="panel-desc">Draft posts with images and threaded replies, then schedule them to auto-publish. Keep
+              tab open.</p>
           </div>
-          <pre class="log-console" id="logConsole"></pre>
-        </div>
-      </section>
+
+          <div class="scheduler-config">
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label" for="postComposerText">Main Post <span id="postCharCount"
+                  style="float:right; font-weight:normal; color:var(--text-light)">0 / 300</span></label>
+              <textarea class="form-input" id="postComposerText" rows="4" placeholder="What's on your mind?"></textarea>
+            </div>
+
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label" for="postComposerImages">Images (Max 4, PNG/JPG)</label>
+              <input class="form-input" type="file" id="postComposerImages" accept="image/png, image/jpeg" multiple />
+              <div id="postImagePreview" style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;"></div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:16px;">
+              <label class="form-label" for="postComposerReply">Follow-up Comment (Threaded Reply)</label>
+              <textarea class="form-input" id="postComposerReply" rows="2"
+                placeholder="Optional: Add a follow-up comment to create a thread..."></textarea>
+            </div>
+
+            <div class="form-row" style="margin-bottom:20px;">
+              <div class="form-group">
+                <label class="form-label" for="postScheduledTime">Schedule Time</label>
+                <input class="form-input" type="datetime-local" id="postScheduledTime" />
+              </div>
+            </div>
+
+            <div class="form-actions" style="margin-bottom:0;">
+              <button class="btn btn-primary" id="btnSchedulePost">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+                ADD TO QUEUE
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Scheduled Posts Queue -->
+        <section class="panel glass wide" id="postQueueSection" style="margin-bottom: 24px; display:none;">
+          <div class="panel-header" style="margin-bottom:12px;">
+            <h2 class="panel-title">Pending Posts Queue</h2>
+          </div>
+          <div id="postQueueList" style="display:flex; flex-direction:column; gap:12px; padding: 0 24px 24px 24px;">
+            <!-- Queue items injected here -->
+          </div>
+        </section>
+
+        <section class="panel glass wide">
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+              Auto-Scheduler
+            </h2>
+            <p class="panel-desc">Configure automated follow/unfollow runs. The browser tab must stay open.</p>
+          </div>
+
+          <div class="scheduler-config" id="schedulerConfig">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="schedMode">Mode</label>
+                <select class="form-input form-select" id="schedMode">
+                  <option value="follow">Follow Only</option>
+                  <option value="unfollow">Unfollow Non-Mutuals Only</option>
+                  <option value="both">Follow + Unfollow</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="schedFrequency">Frequency</label>
+                <select class="form-input form-select" id="schedFrequency">
+                  <option value="21600000">Every 6 hours</option>
+                  <option value="28800000">Every 8 hours</option>
+                  <option value="43200000" selected>Every 12 hours</option>
+                  <option value="86400000">Once a day</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="schedTarget">Target Handle (for follow)</label>
+                <input class="form-input" id="schedTarget" type="text" placeholder="popular.bsky.social" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="schedFollowSource">Follow Source</label>
+                <select class="form-input form-select" id="schedFollowSource">
+                  <option value="followers">Target's Followers</option>
+                  <option value="following">Target's Following</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="schedFollowLimit">Follow Limit / Run</label>
+                <select class="form-input form-select" id="schedFollowLimit">
+                  <option value="100">100</option>
+                  <option value="500">500</option>
+                  <option value="1000" selected>1,000</option>
+                  <option value="2000">2,000</option>
+                  <option value="5000">5,000</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="schedUnfollowLimit">Unfollow Limit / Run</label>
+                <select class="form-input form-select" id="schedUnfollowLimit">
+                  <option value="100">100</option>
+                  <option value="500">500</option>
+                  <option value="1000">1,000</option>
+                  <option value="2000" selected>2,000</option>
+                  <option value="5000">5,000</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="schedDelay">Delay per Action (ms)</label>
+                <select class="form-input form-select" id="schedDelay">
+                  <option value="500">500ms</option>
+                  <option value="1000" selected>1000ms</option>
+                  <option value="1500">1500ms</option>
+                  <option value="2000">2000ms</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="toggle-group" style="margin-bottom:16px">
+              <label class="toggle-label">
+                <input type="checkbox" id="schedDryRun" class="toggle-input" />
+                <span class="toggle-track">
+                  <span class="toggle-thumb"></span>
+                </span>
+                <span class="toggle-text">Dry Run <small>(no real actions)</small></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions" style="margin-bottom:20px">
+            <button class="btn btn-success" id="btnStartScheduler">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+              </svg>
+              Start Scheduler
+            </button>
+            <button class="btn btn-danger" id="btnStopScheduler" style="display:none">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+              </svg>
+              Stop Scheduler
+            </button>
+          </div>
+
+          <!-- Scheduler Status -->
+          <div id="schedulerStatus" style="display:none">
+            <div class="analytics-stats-grid" style="margin-bottom:16px">
+              <div class="stat-card analytics-stat highlight">
+                <span id="schedNextRun">--:--:--</span>
+                <small>Next Run</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="schedTotalRuns">0</span>
+                <small>Total Runs</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="schedTotalFollowed">0</span>
+                <small>Total Followed</small>
+              </div>
+              <div class="stat-card analytics-stat">
+                <span id="schedTotalUnfollowed">0</span>
+                <small>Total Unfollowed</small>
+              </div>
+            </div>
+          </div>
+
+          <div id="schedMsg" class="msg" style="display:none"></div>
+
+          <!-- Scheduler log -->
+          <div class="log-section" id="schedLogSection" style="display:none">
+            <div class="log-header">
+              <span>Scheduler Log</span>
+              <button class="btn btn-sm btn-ghost" id="btnSchedClearLog">Clear</button>
+            </div>
+            <pre class="log-console" id="schedLogConsole"></pre>
+          </div>
+        </section>
+
+      </div><!-- end viewScheduler -->
 
     </main>
 
