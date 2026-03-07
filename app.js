@@ -319,69 +319,79 @@ async function uploadVideoBlob(file, session) {
 // Bluesky requires explicit "facets" for hashtags, mentions, and URLs.
 // Facets use UTF-8 BYTE offsets, not JS character indices.
 // This is ASYNC because mentions need DID resolution via API.
+// Wrapped in try-catch so facet errors can NEVER crash the post flow.
 async function parseFacets(text) {
-    const encoder = new TextEncoder();
-    const facets = [];
+    try {
+        const encoder = new TextEncoder();
+        const facets = [];
 
-    // Helper: convert JS char index to UTF-8 byte index
-    function byteIndex(str, charIndex) {
-        return encoder.encode(str.substring(0, charIndex)).length;
-    }
-
-    // 1. Hashtags: #tag (word chars, no leading digit)
-    const hashtagRegex = /#([a-zA-Z][a-zA-Z0-9_]*)/g;
-    let match;
-    while ((match = hashtagRegex.exec(text)) !== null) {
-        const start = byteIndex(text, match.index);
-        const end = byteIndex(text, match.index + match[0].length);
-        facets.push({
-            index: { byteStart: start, byteEnd: end },
-            features: [{
-                $type: 'app.bsky.richtext.facet#tag',
-                tag: match[1] // tag without #
-            }]
-        });
-    }
-
-    // 2. Mentions: @handle.bsky.social — requires DID resolution
-    const mentionRegex = /@([a-zA-Z0-9._-]+\.[a-zA-Z]+)/g;
-    while ((match = mentionRegex.exec(text)) !== null) {
-        const handle = match[1];
-        try {
-            // Resolve handle to DID
-            const profile = await apiGet('app.bsky.actor.getProfile', { actor: handle }, true);
-            if (profile && profile.did) {
-                const start = byteIndex(text, match.index);
-                const end = byteIndex(text, match.index + match[0].length);
-                facets.push({
-                    index: { byteStart: start, byteEnd: end },
-                    features: [{
-                        $type: 'app.bsky.richtext.facet#mention',
-                        did: profile.did
-                    }]
-                });
-            }
-        } catch (e) {
-            console.warn(`[FACETS] Could not resolve mention @${handle}: ${e.message}`);
-            // Skip unresolvable mentions rather than breaking the whole post
+        // Helper: convert JS char index to UTF-8 byte index
+        function byteIndex(str, charIndex) {
+            return encoder.encode(str.substring(0, charIndex)).length;
         }
-    }
 
-    // 3. URLs: https://... or http://...
-    const urlRegex = /https?:\/\/[^\s<>)"']+/g;
-    while ((match = urlRegex.exec(text)) !== null) {
-        const start = byteIndex(text, match.index);
-        const end = byteIndex(text, match.index + match[0].length);
-        facets.push({
-            index: { byteStart: start, byteEnd: end },
-            features: [{
-                $type: 'app.bsky.richtext.facet#link',
-                uri: match[0]
-            }]
-        });
-    }
+        // 1. Hashtags: #tag (word chars, no leading digit)
+        const hashtagRegex = /#([a-zA-Z][a-zA-Z0-9_]*)/g;
+        let match;
+        while ((match = hashtagRegex.exec(text)) !== null) {
+            const start = byteIndex(text, match.index);
+            const end = byteIndex(text, match.index + match[0].length);
+            facets.push({
+                index: { byteStart: start, byteEnd: end },
+                features: [{
+                    $type: 'app.bsky.richtext.facet#tag',
+                    tag: match[1] // tag without #
+                }]
+            });
+        }
 
-    return facets.length > 0 ? facets : undefined;
+        // 2. Mentions: @handle.bsky.social — requires DID resolution
+        //    Only match if preceded by whitespace or start of string (avoid matching inside URLs)
+        const mentionRegex = /(?:^|\s)@([a-zA-Z0-9._-]+\.[a-zA-Z]+)/g;
+        while ((match = mentionRegex.exec(text)) !== null) {
+            const handle = match[1];
+            try {
+                if (state.session) {
+                    const profile = await apiGet('app.bsky.actor.getProfile', { actor: handle }, true);
+                    if (profile && profile.did) {
+                        // Calculate offset for the @ symbol (skip leading whitespace from regex)
+                        const atIndex = text.indexOf('@' + handle, match.index);
+                        const start = byteIndex(text, atIndex);
+                        const end = byteIndex(text, atIndex + handle.length + 1); // +1 for @
+                        facets.push({
+                            index: { byteStart: start, byteEnd: end },
+                            features: [{
+                                $type: 'app.bsky.richtext.facet#mention',
+                                did: profile.did
+                            }]
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn(`[FACETS] Could not resolve mention @${handle}: ${e.message}`);
+            }
+        }
+
+        // 3. URLs: https://... or http://...
+        const urlRegex = /https?:\/\/[^\s<>)"']+/g;
+        while ((match = urlRegex.exec(text)) !== null) {
+            const start = byteIndex(text, match.index);
+            const end = byteIndex(text, match.index + match[0].length);
+            facets.push({
+                index: { byteStart: start, byteEnd: end },
+                features: [{
+                    $type: 'app.bsky.richtext.facet#link',
+                    uri: match[0]
+                }]
+            });
+        }
+
+        console.log(`[FACETS] Parsed ${facets.length} facet(s) from text`);
+        return facets.length > 0 ? facets : undefined;
+    } catch (err) {
+        console.error(`[FACETS] Error parsing facets (post will proceed without them): ${err.message}`);
+        return undefined;
+    }
 }
 
 function appendLog(text, isError = false) {
@@ -2119,7 +2129,8 @@ async function executeScheduledPost(post) {
         post.publishMessage = 'Creating post...';
         renderPostQueue();
 
-        const mainFacets = await parseFacets(post.text);
+        let mainFacets;
+        try { mainFacets = await parseFacets(post.text); } catch (e) { console.warn('[FACETS] skipped:', e); }
         const rootPostData = {
             repo: state.session.did,
             collection: 'app.bsky.feed.post',
@@ -2144,7 +2155,8 @@ async function executeScheduledPost(post) {
             post.publishMessage = 'Adding reply...';
             renderPostQueue();
 
-            const replyFacets = await parseFacets(post.replyText);
+            let replyFacets;
+            try { replyFacets = await parseFacets(post.replyText); } catch (e) { console.warn('[FACETS] skipped:', e); }
             const replyData = {
                 repo: state.session.did,
                 collection: 'app.bsky.feed.post',
@@ -2320,7 +2332,8 @@ ui.btnPostNow.addEventListener('click', async () => {
 
         // 2. Create the main post record
         showMsg(ui.postNowMsg, 'Creating post...', 'info');
-        const mainFacets = await parseFacets(text);
+        let mainFacets;
+        try { mainFacets = await parseFacets(text); } catch (e) { console.warn('[FACETS] skipped:', e); }
         const rootPostData = {
             repo: state.session.did,
             collection: 'app.bsky.feed.post',
@@ -2339,7 +2352,8 @@ ui.btnPostNow.addEventListener('click', async () => {
         const replyText = ui.postNowReply.value.trim();
         if (replyText) {
             showMsg(ui.postNowMsg, 'Adding reply...', 'info');
-            const replyFacets = await parseFacets(replyText);
+            let replyFacets;
+            try { replyFacets = await parseFacets(replyText); } catch (e) { console.warn('[FACETS] skipped:', e); }
             const replyData = {
                 repo: state.session.did,
                 collection: 'app.bsky.feed.post',
