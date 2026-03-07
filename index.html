@@ -557,67 +557,145 @@
       <!-- ═══════════ VIEW: SCHEDULER ═══════════ -->
       <div id="viewScheduler" class="view-section" style="display:none">
 
-        <!-- Post Scheduler Section -->
-        <section class="panel glass wide" style="margin-bottom: 24px;">
-          <div class="panel-header">
-            <h2 class="panel-title">
-              <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
-                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor"
-                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              Schedule a Post
-            </h2>
-            <p class="panel-desc">Draft posts with images and threaded replies, then schedule them to auto-publish. Keep
-              tab open.</p>
-          </div>
+        <!-- Sub-tab navigation -->
+        <nav class="sub-tab-nav" id="schedulerSubTabs">
+          <button class="sub-tab-btn active" data-subtab="postNow">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Post Now
+          </button>
+          <button class="sub-tab-btn" data-subtab="scheduleLater">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+              <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+            Schedule
+          </button>
+        </nav>
 
-          <div class="scheduler-config">
-            <div class="form-group" style="margin-bottom:16px;">
-              <label class="form-label" for="postComposerText">Main Post <span id="postCharCount"
-                  style="float:right; font-weight:normal; color:var(--text-light)">0 / 300</span></label>
-              <textarea class="form-input" id="postComposerText" rows="4" placeholder="What's on your mind?"></textarea>
+        <!-- ─── SUB-TAB: POST NOW ─── -->
+        <div id="subtabPostNow" class="subtab-section">
+          <section class="panel glass wide" style="margin-bottom: 24px;">
+            <div class="panel-header">
+              <h2 class="panel-title">
+                <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Post Now
+              </h2>
+              <p class="panel-desc">Publish a post immediately to your Bluesky account.</p>
             </div>
 
-            <div class="form-group" style="margin-bottom:16px;">
-              <label class="form-label" for="postComposerImages">Images (Max 4, PNG/JPG)</label>
-              <input class="form-input" type="file" id="postComposerImages" accept="image/png, image/jpeg" multiple />
-              <div id="postImagePreview" style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;"></div>
+            <div class="scheduler-config">
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" for="postNowText">Post Text <span id="postNowCharCount"
+                    style="float:right; font-weight:normal; color:var(--text-light)">0 / 300</span></label>
+                <textarea class="form-input" id="postNowText" rows="4" placeholder="What's on your mind?"></textarea>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" for="postNowImages">Media (Max 4 images or 1 video)</label>
+                <input class="form-input" type="file" id="postNowImages"
+                  accept="image/png, image/jpeg, image/gif, image/webp, video/mp4, video/webm, video/quicktime, video/mpeg"
+                  multiple />
+                <div id="postNowImagePreview" style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;"></div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" for="postNowReply">Follow-up Comment (Threaded Reply)</label>
+                <textarea class="form-input" id="postNowReply" rows="2"
+                  placeholder="Optional: Add a follow-up comment to create a thread..."></textarea>
+              </div>
+
+              <div class="form-actions" style="margin-bottom:0;">
+                <button class="btn btn-success" id="btnPostNow">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                  <span class="btn-text">PUBLISH NOW</span>
+                </button>
+              </div>
+              <div id="postNowMsg" class="msg" style="display:none"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ─── SUB-TAB: SCHEDULE ─── -->
+        <div id="subtabScheduleLater" class="subtab-section" style="display:none">
+          <section class="panel glass wide" style="margin-bottom: 24px;">
+            <div class="panel-header">
+              <h2 class="panel-title">
+                <svg class="panel-icon" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                  <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+                Schedule a Post
+              </h2>
+              <p class="panel-desc">Draft posts with images and threaded replies, then schedule them to auto-publish.
+                Keep
+                tab open.</p>
             </div>
 
-            <div class="form-group" style="margin-bottom:16px;">
-              <label class="form-label" for="postComposerReply">Follow-up Comment (Threaded Reply)</label>
-              <textarea class="form-input" id="postComposerReply" rows="2"
-                placeholder="Optional: Add a follow-up comment to create a thread..."></textarea>
-            </div>
+            <div class="scheduler-config">
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" for="postComposerText">Main Post <span id="postCharCount"
+                    style="float:right; font-weight:normal; color:var(--text-light)">0 / 300</span></label>
+                <textarea class="form-input" id="postComposerText" rows="4"
+                  placeholder="What's on your mind?"></textarea>
+              </div>
 
-            <div class="form-row" style="margin-bottom:20px;">
-              <div class="form-group">
-                <label class="form-label" for="postScheduledTime">Schedule Time</label>
-                <input class="form-input" type="datetime-local" id="postScheduledTime" />
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" for="postComposerImages">Media (Max 4 images or 1 video)</label>
+                <input class="form-input" type="file" id="postComposerImages"
+                  accept="image/png, image/jpeg, image/gif, image/webp, video/mp4, video/webm, video/quicktime, video/mpeg"
+                  multiple />
+                <div id="postImagePreview" style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;"></div>
+              </div>
+
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" for="postComposerReply">Follow-up Comment (Threaded Reply)</label>
+                <textarea class="form-input" id="postComposerReply" rows="2"
+                  placeholder="Optional: Add a follow-up comment to create a thread..."></textarea>
+              </div>
+
+              <div class="form-row" style="margin-bottom:20px;">
+                <div class="form-group">
+                  <label class="form-label" for="postScheduledTime">Schedule Time</label>
+                  <input class="form-input" type="datetime-local" id="postScheduledTime" />
+                </div>
+              </div>
+
+              <div class="form-actions" style="margin-bottom:0;">
+                <button class="btn btn-primary" id="btnSchedulePost">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                    <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                      stroke-linejoin="round" />
+                  </svg>
+                  ADD TO QUEUE
+                </button>
               </div>
             </div>
+          </section>
 
-            <div class="form-actions" style="margin-bottom:0;">
-              <button class="btn btn-primary" id="btnSchedulePost">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                </svg>
-                ADD TO QUEUE
-              </button>
+          <section class="panel glass wide" id="postQueueSection" style="margin-bottom: 24px; display:none;">
+            <div class="panel-header" style="margin-bottom:12px;">
+              <h2 class="panel-title">Scheduled Posts Queue</h2>
             </div>
-          </div>
-        </section>
+            <div id="postQueueList" class="user-grid" style="padding: 0 24px 24px 24px;">
+              <!-- Queue items injected here -->
+            </div>
+          </section>
 
-        <!-- Scheduled Posts Queue -->
-        <section class="panel glass wide" id="postQueueSection" style="margin-bottom: 24px; display:none;">
-          <div class="panel-header" style="margin-bottom:12px;">
-            <h2 class="panel-title">Pending Posts Queue</h2>
-          </div>
-          <div id="postQueueList" style="display:flex; flex-direction:column; gap:12px; padding: 0 24px 24px 24px;">
-            <!-- Queue items injected here -->
-          </div>
-        </section>
+        </div><!-- end subtabScheduleLater -->
 
+        <!-- ─── AUTO-SCHEDULER (always visible) ─── -->
         <section class="panel glass wide">
           <div class="panel-header">
             <h2 class="panel-title">

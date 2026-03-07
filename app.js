@@ -152,6 +152,20 @@ const ui = {
     btnSchedulePost: document.getElementById('btnSchedulePost'),
     postQueueSection: document.getElementById('postQueueSection'),
     postQueueList: document.getElementById('postQueueList'),
+
+    // Post Now
+    postNowText: document.getElementById('postNowText'),
+    postNowCharCount: document.getElementById('postNowCharCount'),
+    postNowImages: document.getElementById('postNowImages'),
+    postNowImagePreview: document.getElementById('postNowImagePreview'),
+    postNowReply: document.getElementById('postNowReply'),
+    btnPostNow: document.getElementById('btnPostNow'),
+    postNowMsg: document.getElementById('postNowMsg'),
+
+    // Sub-tabs
+    schedulerSubTabs: document.getElementById('schedulerSubTabs'),
+    subtabPostNow: document.getElementById('subtabPostNow'),
+    subtabScheduleLater: document.getElementById('subtabScheduleLater'),
 };
 
 // ── State ──
@@ -181,6 +195,9 @@ const state = {
     // Post Scheduler
     scheduledPosts: [],
     postImageFiles: [],
+
+    // Post Now
+    postNowImageFiles: [],
 };
 
 // ──────────────────────────────────────────────
@@ -193,6 +210,179 @@ function showMsg(el, text, type = 'info') {
 }
 function hideMsg(el) { el.style.display = 'none'; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// ── Media Preparation ──
+// Bluesky uploadBlob has a ~1MB limit for image blobs.
+// GIFs: upload as-is (Canvas destroys animation). Bluesky handles GIFs up to ~1MB.
+// Videos: use separate video upload service (up to 100MB).
+// Static images (JPG/PNG/WebP): auto-compress via Canvas if over limit.
+const MAX_BLOB_SIZE = 976 * 1024; // 976 KB
+
+function isVideoFile(file) {
+    return file.type.startsWith('video/');
+}
+
+function isGifFile(file) {
+    return file.type === 'image/gif';
+}
+
+function compressImage(file, maxSize = MAX_BLOB_SIZE) {
+    return new Promise((resolve) => {
+        // Videos — never compress, handled separately
+        if (isVideoFile(file)) {
+            return resolve(file);
+        }
+
+        // GIFs — pass through as-is to preserve animation
+        // If too large for uploadBlob, it'll be handled at upload time
+        if (isGifFile(file)) {
+            console.log(`[MEDIA] GIF detected: ${file.name} (${(file.size / 1024).toFixed(0)}KB) — skipping compression to preserve animation`);
+            return resolve(file);
+        }
+
+        // Already small enough, return as-is
+        if (file.size <= maxSize) {
+            return resolve(file);
+        }
+
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+
+            // Scale down if needed — reduce dimensions proportionally
+            const scaleFactor = Math.min(1, Math.sqrt(maxSize / file.size) * 1.1);
+            width = Math.round(width * scaleFactor);
+            height = Math.round(height * scaleFactor);
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Try progressively lower quality JPEG
+            let quality = 0.85;
+            const tryCompress = () => {
+                canvas.toBlob((blob) => {
+                    if (blob.size <= maxSize || quality <= 0.3) {
+                        const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                            type: 'image/jpeg',
+                            lastModified: Date.now()
+                        });
+                        console.log(`[COMPRESS] ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ${(compressedFile.size / 1024).toFixed(0)}KB (q=${quality.toFixed(2)})`);
+                        resolve(compressedFile);
+                    } else {
+                        quality -= 0.1;
+                        tryCompress();
+                    }
+                }, 'image/jpeg', quality);
+            };
+            tryCompress();
+        };
+        img.src = url;
+    });
+}
+
+// Upload a video via Bluesky's video service (supports up to 100MB, 3 min)
+async function uploadVideoBlob(file, session) {
+    console.log(`[VIDEO] Uploading video: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)}MB)`);
+
+    // Step 1: Get the video service auth token
+    const tokenRes = await fetch(`${PDS_URL}/xrpc/com.atproto.server.getServiceAuth`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${session.accessJwt}` }
+    });
+
+    // Step 2: Upload the video via uploadBlob (Bluesky handles large videos)
+    const uploadRes = await fetch(`${PDS_URL}/xrpc/com.atproto.repo.uploadBlob`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${session.accessJwt}`,
+            'Content-Type': file.type
+        },
+        body: file
+    });
+
+    if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        throw new Error(`Video upload failed: ${errText}`);
+    }
+
+    const data = await uploadRes.json();
+    return data.blob;
+}
+
+
+// ── Rich Text Facets Parser ──
+// Bluesky requires explicit "facets" for hashtags, mentions, and URLs.
+// Facets use UTF-8 BYTE offsets, not JS character indices.
+// This is ASYNC because mentions need DID resolution via API.
+async function parseFacets(text) {
+    const encoder = new TextEncoder();
+    const facets = [];
+
+    // Helper: convert JS char index to UTF-8 byte index
+    function byteIndex(str, charIndex) {
+        return encoder.encode(str.substring(0, charIndex)).length;
+    }
+
+    // 1. Hashtags: #tag (word chars, no leading digit)
+    const hashtagRegex = /#([a-zA-Z][a-zA-Z0-9_]*)/g;
+    let match;
+    while ((match = hashtagRegex.exec(text)) !== null) {
+        const start = byteIndex(text, match.index);
+        const end = byteIndex(text, match.index + match[0].length);
+        facets.push({
+            index: { byteStart: start, byteEnd: end },
+            features: [{
+                $type: 'app.bsky.richtext.facet#tag',
+                tag: match[1] // tag without #
+            }]
+        });
+    }
+
+    // 2. Mentions: @handle.bsky.social — requires DID resolution
+    const mentionRegex = /@([a-zA-Z0-9._-]+\.[a-zA-Z]+)/g;
+    while ((match = mentionRegex.exec(text)) !== null) {
+        const handle = match[1];
+        try {
+            // Resolve handle to DID
+            const profile = await apiGet('app.bsky.actor.getProfile', { actor: handle }, true);
+            if (profile && profile.did) {
+                const start = byteIndex(text, match.index);
+                const end = byteIndex(text, match.index + match[0].length);
+                facets.push({
+                    index: { byteStart: start, byteEnd: end },
+                    features: [{
+                        $type: 'app.bsky.richtext.facet#mention',
+                        did: profile.did
+                    }]
+                });
+            }
+        } catch (e) {
+            console.warn(`[FACETS] Could not resolve mention @${handle}: ${e.message}`);
+            // Skip unresolvable mentions rather than breaking the whole post
+        }
+    }
+
+    // 3. URLs: https://... or http://...
+    const urlRegex = /https?:\/\/[^\s<>)"']+/g;
+    while ((match = urlRegex.exec(text)) !== null) {
+        const start = byteIndex(text, match.index);
+        const end = byteIndex(text, match.index + match[0].length);
+        facets.push({
+            index: { byteStart: start, byteEnd: end },
+            features: [{
+                $type: 'app.bsky.richtext.facet#link',
+                uri: match[0]
+            }]
+        });
+    }
+
+    return facets.length > 0 ? facets : undefined;
+}
 
 function appendLog(text, isError = false) {
     ui.logSection.style.display = 'block';
@@ -1500,7 +1690,6 @@ function updateCountdown() {
         const s = Math.floor((remaining % 60000) / 1000);
         ui.schedNextRun.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
-    checkPostQueue();
 }
 
 function updateSchedulerStats() {
@@ -1709,20 +1898,56 @@ function renderPostQueue() {
     state.scheduledPosts.forEach(post => {
         const div = document.createElement('div');
         div.className = 'queue-item';
+        div.id = 'queue-item-' + post.id;
 
         const timeStr = new Date(post.scheduledTime).toLocaleString();
 
+        let statusClass = 'badge-pending';
+        let statusText = 'PENDING';
+        let statusMsgHtml = '';
+        let btnHtml = '';
+
+        if (post.status === 'publishing') {
+            statusClass = 'badge-publishing';
+            statusText = 'PUBLISHING';
+            statusMsgHtml = `<div class="queue-item-status-msg" id="status-msg-${post.id}">${post.publishMessage || 'Working...'}</div>`;
+        } else if (post.status === 'done' || post.status === 'published') {
+            statusClass = 'badge-published';
+            statusText = 'PUBLISHED';
+            btnHtml = `<button class="btn btn-primary btn-sm" onclick="fetchSinglePostAnalytics('${post.uri}', '${post.id}')">View Analytics</button>`;
+        } else if (post.status === 'error') {
+            statusClass = 'badge-error';
+            statusText = 'ERROR';
+            statusMsgHtml = `<div class="queue-item-error">${escapeHtml(post.error || 'Unknown error')}</div>`;
+            btnHtml = `<button class="btn btn-danger btn-sm" onclick="cancelScheduledPost('${post.id}')">✕</button>`;
+        } else {
+            // default pending
+            btnHtml = `<button class="btn btn-danger btn-sm" onclick="cancelScheduledPost('${post.id}')">✕</button>`;
+        }
+
         div.innerHTML = `
-            <div class="queue-item-content">
-                <div class="queue-item-text">${post.text}</div>
-                <div class="queue-item-meta">
-                    <span class="badge">SCHED</span>
-                    <span>${timeStr}</span>
-                    ${post.images.length > 0 ? `<span>📷 ${post.images.length}</span>` : ''}
-                    ${post.replyText ? `<span>💬 +Reply</span>` : ''}
+            <div class="queue-item-header">
+                <div class="queue-item-content">
+                    <div class="queue-item-text">${escapeHtml(post.text)}</div>
+                    <div class="queue-item-meta">
+                        <span class="badge ${statusClass}">${statusText}</span>
+                        <span>${timeStr}</span>
+                        ${post.images && post.images.length > 0 ? `<span>📷 ${post.images.length}</span>` : ''}
+                        ${post.replyText ? `<span>💬 +Reply</span>` : ''}
+                    </div>
+                    ${statusMsgHtml}
+                </div>
+                ${btnHtml}
+            </div>
+            
+            <div class="queue-item-analytics" id="analytics-${post.id}">
+                <div class="queue-analytics-grid">
+                    <div class="queue-stat"><span id="stat-likes-${post.id}">-</span><small>Likes</small></div>
+                    <div class="queue-stat"><span id="stat-reposts-${post.id}">-</span><small>Reposts</small></div>
+                    <div class="queue-stat"><span id="stat-replies-${post.id}">-</span><small>Replies</small></div>
+                    <div class="queue-stat"><span id="stat-quotes-${post.id}">-</span><small>Quotes</small></div>
                 </div>
             </div>
-            <button class="btn btn-danger" style="padding: 4px 8px;" onclick="cancelScheduledPost('${post.id}')">✕</button>
         `;
         ui.postQueueList.appendChild(div);
     });
@@ -1731,6 +1956,45 @@ function renderPostQueue() {
 window.cancelScheduledPost = (id) => {
     state.scheduledPosts = state.scheduledPosts.filter(p => p.id !== id);
     renderPostQueue();
+};
+
+window.fetchSinglePostAnalytics = async (uri, id) => {
+    const analyticsDiv = document.getElementById(`analytics-${id}`);
+    if (!analyticsDiv) return;
+
+    // Toggle visibility
+    if (analyticsDiv.style.display === 'block') {
+        analyticsDiv.style.display = 'none';
+        return;
+    }
+
+    analyticsDiv.style.display = 'block';
+
+    // Set loading state
+    document.getElementById(`stat-likes-${id}`).textContent = '...';
+    document.getElementById(`stat-reposts-${id}`).textContent = '...';
+    document.getElementById(`stat-replies-${id}`).textContent = '...';
+    document.getElementById(`stat-quotes-${id}`).textContent = '...';
+
+    try {
+        const data = await apiGet('app.bsky.feed.getPosts', { uris: [uri] }, true);
+        const post = data.posts && data.posts[0];
+
+        if (post) {
+            document.getElementById(`stat-likes-${id}`).textContent = post.likeCount || 0;
+            document.getElementById(`stat-reposts-${id}`).textContent = post.repostCount || 0;
+            document.getElementById(`stat-replies-${id}`).textContent = post.replyCount || 0;
+            document.getElementById(`stat-quotes-${id}`).textContent = post.quoteCount || 0;
+        } else {
+            throw new Error("Post not found");
+        }
+    } catch (e) {
+        console.error("Failed to fetch analytics", e);
+        document.getElementById(`stat-likes-${id}`).textContent = 'Err';
+        document.getElementById(`stat-reposts-${id}`).textContent = 'Err';
+        document.getElementById(`stat-replies-${id}`).textContent = 'Err';
+        document.getElementById(`stat-quotes-${id}`).textContent = 'Err';
+    }
 };
 
 ui.btnSchedulePost.addEventListener('click', () => {
@@ -1795,41 +2059,67 @@ function checkPostQueue() {
 
 async function executeScheduledPost(post) {
     schedLog(`[POST SCHEDULER] Starting to publish scheduled post: "${post.text.substring(0, 30)}..."`);
+    post.status = 'publishing';
+    post.publishMessage = 'Starting...';
+    renderPostQueue();
 
     try {
         let embed = null;
 
-        // 1. Upload Images if any
+        // 1. Upload media (images/GIFs/video)
         if (post.images.length > 0) {
-            schedLog(`[POST SCHEDULER] Uploading ${post.images.length} images...`);
-            const uploadedBlobs = [];
+            const videoFiles = post.images.filter(f => isVideoFile(f));
+            const imageFiles = post.images.filter(f => !isVideoFile(f));
 
-            for (const file of post.images) {
-                const res = await fetch(`${PDS_URL}/xrpc/com.atproto.repo.uploadBlob`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${state.session.accessJwt}`,
-                        'Content-Type': file.type
-                    },
-                    body: file // the File object itself
-                });
+            if (videoFiles.length > 0) {
+                // Video embed
+                schedLog(`[POST SCHEDULER] Uploading video...`);
+                post.publishMessage = 'Uploading video...';
+                renderPostQueue();
+                const videoBlob = await uploadVideoBlob(videoFiles[0], state.session);
+                embed = {
+                    $type: 'app.bsky.embed.video',
+                    video: videoBlob
+                };
+            } else if (imageFiles.length > 0) {
+                // Image/GIF embed
+                schedLog(`[POST SCHEDULER] Uploading ${imageFiles.length} image(s)...`);
+                post.publishMessage = `Uploading ${imageFiles.length} image(s)...`;
+                renderPostQueue();
+                const uploadedBlobs = [];
 
-                if (!res.ok) throw new Error(`Failed to upload image`);
-                const data = await res.json();
-                uploadedBlobs.push({
-                    alt: '', // Custom alt text could be added in the UI later
-                    image: data.blob
-                });
+                for (const file of imageFiles) {
+                    const compressed = await compressImage(file);
+                    const res = await fetch(`${PDS_URL}/xrpc/com.atproto.repo.uploadBlob`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${state.session.accessJwt}`,
+                            'Content-Type': compressed.type
+                        },
+                        body: compressed
+                    });
+
+                    if (!res.ok) throw new Error(`Failed to upload image`);
+                    const data = await res.json();
+                    uploadedBlobs.push({
+                        alt: '',
+                        image: data.blob
+                    });
+                }
+
+                embed = {
+                    $type: 'app.bsky.embed.images',
+                    images: uploadedBlobs
+                };
             }
-
-            embed = {
-                $type: 'app.bsky.embed.images',
-                images: uploadedBlobs
-            };
         }
 
         // 2. Create the main post record
         schedLog(`[POST SCHEDULER] Creating main post record...`);
+        post.publishMessage = 'Creating post...';
+        renderPostQueue();
+
+        const mainFacets = await parseFacets(post.text);
         const rootPostData = {
             repo: state.session.did,
             collection: 'app.bsky.feed.post',
@@ -1837,6 +2127,7 @@ async function executeScheduledPost(post) {
                 $type: 'app.bsky.feed.post',
                 text: post.text,
                 createdAt: new Date().toISOString(),
+                ...(mainFacets ? { facets: mainFacets } : {}),
                 ...(embed ? { embed } : {})
             }
         };
@@ -1844,9 +2135,16 @@ async function executeScheduledPost(post) {
         const rootPostRes = await apiPost('com.atproto.repo.createRecord', rootPostData, true);
         schedLog(`[POST SCHEDULER] Main post published! URI: ${rootPostRes.uri}`);
 
+        // Save URI for analytics
+        post.uri = rootPostRes.uri;
+
         // 3. Create follow-up reply if any
         if (post.replyText) {
             schedLog(`[POST SCHEDULER] Creating follow-up threaded reply...`);
+            post.publishMessage = 'Adding reply...';
+            renderPostQueue();
+
+            const replyFacets = await parseFacets(post.replyText);
             const replyData = {
                 repo: state.session.did,
                 collection: 'app.bsky.feed.post',
@@ -1854,6 +2152,7 @@ async function executeScheduledPost(post) {
                     $type: 'app.bsky.feed.post',
                     text: post.replyText,
                     createdAt: new Date().toISOString(),
+                    ...(replyFacets ? { facets: replyFacets } : {}),
                     reply: {
                         root: { uri: rootPostRes.uri, cid: rootPostRes.cid },
                         parent: { uri: rootPostRes.uri, cid: rootPostRes.cid }
@@ -1864,13 +2163,214 @@ async function executeScheduledPost(post) {
             schedLog(`[POST SCHEDULER] Follow-up reply published!`);
         }
 
-        // 4. Remove from queue and refresh UI
-        post.status = 'done';
-        state.scheduledPosts = state.scheduledPosts.filter(p => p.id !== post.id);
+        // 4. Update status and UI
+        post.status = 'published';
+        post.publishMessage = '';
         renderPostQueue();
 
     } catch (err) {
-        post.status = 'pending'; // revert so it can be re-tried or manually deleted
+        post.status = 'error';
+        post.error = err.message || 'Error occurred';
+        renderPostQueue();
         schedLog(`[POST SCHEDULER] Error publishing post: ${err.message}`);
     }
 }
+
+// ──────────────────────────────────────────────
+// INDEPENDENT POST QUEUE TIMER (fixes scheduling bug)
+// checkPostQueue was previously only called from updateCountdown
+// which only runs when the auto-scheduler is active. This ensures
+// scheduled posts fire regardless.
+// ──────────────────────────────────────────────
+setInterval(checkPostQueue, 1000);
+
+// ──────────────────────────────────────────────
+// SUB-TAB SWITCHING (Post Now / Schedule)
+// ──────────────────────────────────────────────
+const subtabViews = {
+    postNow: ui.subtabPostNow,
+    scheduleLater: ui.subtabScheduleLater
+};
+
+ui.schedulerSubTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sub-tab-btn');
+    if (!btn) return;
+    const target = btn.dataset.subtab;
+
+    // Hide all subtab content
+    Object.values(subtabViews).forEach(v => { if (v) v.style.display = 'none'; });
+    // Remove active from all sub-tabs
+    ui.schedulerSubTabs.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+
+    // Show target
+    if (subtabViews[target]) subtabViews[target].style.display = '';
+    btn.classList.add('active');
+});
+
+// ──────────────────────────────────────────────
+// POST NOW — Char count, images, immediate publish
+// ──────────────────────────────────────────────
+ui.postNowText.addEventListener('input', () => {
+    const len = ui.postNowText.value.length;
+    ui.postNowCharCount.textContent = `${len} / 300`;
+    ui.postNowCharCount.style.color = len > 300 ? 'var(--red)' : 'var(--text-light)';
+});
+
+ui.postNowImages.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    if (state.postNowImageFiles.length + files.length > 4) {
+        alert('Maximum 4 images allowed per post.');
+        ui.postNowImages.value = '';
+        return;
+    }
+
+    files.forEach(file => {
+        state.postNowImageFiles.push(file);
+
+        const container = document.createElement('div');
+        container.className = 'image-preview-container';
+
+        const img = document.createElement('img');
+        img.className = 'image-preview-thumb';
+        img.src = URL.createObjectURL(file);
+
+        const removeBtn = document.createElement('div');
+        removeBtn.className = 'image-preview-remove';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = () => {
+            container.remove();
+            state.postNowImageFiles = state.postNowImageFiles.filter(f => f !== file);
+        };
+
+        container.appendChild(img);
+        container.appendChild(removeBtn);
+        ui.postNowImagePreview.appendChild(container);
+    });
+
+    ui.postNowImages.value = '';
+});
+
+ui.btnPostNow.addEventListener('click', async () => {
+    if (!state.session) {
+        showMsg(ui.postNowMsg, 'Please connect your account on the Dashboard tab first.', 'error');
+        return;
+    }
+
+    const text = ui.postNowText.value.trim();
+    if (!text) {
+        showMsg(ui.postNowMsg, 'Post text cannot be empty.', 'error');
+        return;
+    }
+
+    if (text.length > 300) {
+        showMsg(ui.postNowMsg, 'Post exceeds 300 character limit.', 'error');
+        return;
+    }
+
+    hideMsg(ui.postNowMsg);
+    ui.btnPostNow.disabled = true;
+    ui.btnPostNow.querySelector('.btn-text').textContent = 'PUBLISHING...';
+
+    try {
+        let embed = null;
+
+        // 1. Upload media (images/GIFs/video)
+        if (state.postNowImageFiles.length > 0) {
+            const videoFiles = state.postNowImageFiles.filter(f => isVideoFile(f));
+            const imageFiles = state.postNowImageFiles.filter(f => !isVideoFile(f));
+
+            if (videoFiles.length > 0) {
+                // Video embed
+                showMsg(ui.postNowMsg, 'Uploading video...', 'info');
+                const videoBlob = await uploadVideoBlob(videoFiles[0], state.session);
+                embed = {
+                    $type: 'app.bsky.embed.video',
+                    video: videoBlob
+                };
+            } else if (imageFiles.length > 0) {
+                // Image/GIF embed  
+                showMsg(ui.postNowMsg, `Uploading ${imageFiles.length} image(s)...`, 'info');
+                const uploadedBlobs = [];
+
+                for (const file of imageFiles) {
+                    const compressed = await compressImage(file);
+                    const res = await fetch(`${PDS_URL}/xrpc/com.atproto.repo.uploadBlob`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${state.session.accessJwt}`,
+                            'Content-Type': compressed.type
+                        },
+                        body: compressed
+                    });
+
+                    if (!res.ok) throw new Error('Failed to upload image');
+                    const data = await res.json();
+                    uploadedBlobs.push({
+                        alt: '',
+                        image: data.blob
+                    });
+                }
+
+                embed = {
+                    $type: 'app.bsky.embed.images',
+                    images: uploadedBlobs
+                };
+            }
+        }
+
+        // 2. Create the main post record
+        showMsg(ui.postNowMsg, 'Creating post...', 'info');
+        const mainFacets = await parseFacets(text);
+        const rootPostData = {
+            repo: state.session.did,
+            collection: 'app.bsky.feed.post',
+            record: {
+                $type: 'app.bsky.feed.post',
+                text: text,
+                createdAt: new Date().toISOString(),
+                ...(mainFacets ? { facets: mainFacets } : {}),
+                ...(embed ? { embed } : {})
+            }
+        };
+
+        const rootPostRes = await apiPost('com.atproto.repo.createRecord', rootPostData, true);
+
+        // 3. Create follow-up reply if any
+        const replyText = ui.postNowReply.value.trim();
+        if (replyText) {
+            showMsg(ui.postNowMsg, 'Adding reply...', 'info');
+            const replyFacets = await parseFacets(replyText);
+            const replyData = {
+                repo: state.session.did,
+                collection: 'app.bsky.feed.post',
+                record: {
+                    $type: 'app.bsky.feed.post',
+                    text: replyText,
+                    createdAt: new Date().toISOString(),
+                    ...(replyFacets ? { facets: replyFacets } : {}),
+                    reply: {
+                        root: { uri: rootPostRes.uri, cid: rootPostRes.cid },
+                        parent: { uri: rootPostRes.uri, cid: rootPostRes.cid }
+                    }
+                }
+            };
+            await apiPost('com.atproto.repo.createRecord', replyData, true);
+        }
+
+        // 4. Success! Reset the form
+        showMsg(ui.postNowMsg, '✓ Post published successfully!', 'success');
+        ui.postNowText.value = '';
+        ui.postNowReply.value = '';
+        ui.postNowCharCount.textContent = '0 / 300';
+        ui.postNowCharCount.style.color = 'var(--text-light)';
+        state.postNowImageFiles = [];
+        ui.postNowImagePreview.innerHTML = '';
+        ui.postNowImages.value = '';
+
+    } catch (err) {
+        showMsg(ui.postNowMsg, `Error: ${err.message}`, 'error');
+    } finally {
+        ui.btnPostNow.disabled = false;
+        ui.btnPostNow.querySelector('.btn-text').textContent = 'PUBLISH NOW';
+    }
+});
