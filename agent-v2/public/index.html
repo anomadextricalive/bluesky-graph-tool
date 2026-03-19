@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent V2 Local UI</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>Agent V2 Control Room</h1>
+    <p class="sub">Localhost UI for Bluesky autonomous experiments</p>
+
+    <section class="panel actions">
+      <button id="btnRefresh">Refresh</button>
+      <button id="btnRun">Run Once</button>
+      <button id="btnStart">Start Daemon</button>
+      <button id="btnStop">Stop Daemon</button>
+      <span id="runtimeBadge" class="badge">Unknown</span>
+    </section>
+
+    <section class="panel grid2">
+      <div>
+        <h2>State</h2>
+        <pre id="stateView">Loading...</pre>
+      </div>
+      <div>
+        <h2>Config (editable)</h2>
+        <textarea id="configBox" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="btnLoadConfig">Load Config</button>
+          <button id="btnSaveConfig">Save Config</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Logs</h2>
+      <pre id="logsView"></pre>
+    </section>
+  </main>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

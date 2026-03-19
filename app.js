@@ -2388,3 +2388,237 @@ ui.btnPostNow.addEventListener('click', async () => {
         ui.btnPostNow.querySelector('.btn-text').textContent = 'PUBLISH NOW';
     }
 });
+
+// ════════════════════════════════════════════════
+// NEW: GROWTH ENGINE (AGENT V2) INTEGRATION
+// ════════════════════════════════════════════════
+
+const geUi = {
+    view: document.getElementById('viewGrowthEngine'),
+    tabBtn: document.querySelector('.tab-btn[data-view="growthEngine"]'),
+    badge: document.getElementById('geRuntimeBadge'),
+    btnRefresh: document.getElementById('geBtnRefresh'),
+    btnRun: document.getElementById('geBtnRun'),
+    btnStart: document.getElementById('geBtnStart'),
+    btnStop: document.getElementById('geBtnStop'),
+    statusMsg: document.getElementById('geStatusMsg'),
+    
+    cntFollows: document.getElementById('geFollowsToday'),
+    cntUnfollows: document.getElementById('geUnfollowsToday'),
+    cntReposts: document.getElementById('geRepostsToday'),
+    cntTracked: document.getElementById('geFollowCount'),
+
+    configBox: document.getElementById('geConfigBox'),
+    btnLoadConfig: document.getElementById('geBtnLoadConfig'),
+    btnSaveConfig: document.getElementById('geBtnSaveConfig'),
+
+    logsView: document.getElementById('geLogsView')
+};
+
+// Add views lookup for the dynamic switcher
+views.growthEngine = geUi.view;
+
+const GE_API = 'http://127.0.0.1:4322/api';
+let gePoller = null;
+
+function showGeMsg(text, type='info') {
+    geUi.statusMsg.textContent = text;
+    geUi.statusMsg.className = `msg ${type}`;
+    geUi.statusMsg.style.display = 'block';
+    setTimeout(() => geUi.statusMsg.style.display = 'none', 5000);
+}
+
+// ── 1. Pass Credentials on Login ──
+// Hook into existing login success (we will patch the login function or just let users push config manually for now)
+// Actually, let's just make a function to push current session to GE config
+async function syncCredentialsToGrowthEngine() {
+    if (!state.session) return;
+    try {
+        const handle = ui.inputHandle.value.trim().replace(/^@/, '');
+        const password = ui.inputPassword.value.trim(); // We need the raw password to send to Agent V2
+        
+        if (!password) {
+             console.log("No password available to sync to Growth Engine (probably auto-logged in).");
+             return;
+        }
+
+        // 1. Fetch current config
+        const confRes = await fetch(`${GE_API}/config`);
+        if (!confRes.ok) throw new Error('Failed to fetch GE config');
+        const confData = await confRes.json();
+        
+        let cfg = confData.config || {};
+        if (!cfg.bluesky) cfg.bluesky = {};
+        
+        // 2. Update config
+        cfg.bluesky.handle = handle;
+        cfg.bluesky.appPassword = password;
+        
+        // 3. Save it back
+        await fetch(`${GE_API}/config`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ config: cfg })
+        });
+        console.log('[GE] Synced credentials to Agent V2');
+        await refreshGeStatus();
+    } catch(err) {
+        console.error('[GE] Sync Error:', err);
+    }
+}
+
+// ── 2. GE Controls ──
+
+async function refreshGeStatus() {
+    try {
+        const res = await fetch(`${GE_API}/status`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+
+        // Update Badge
+        if (data.daemonRunning) {
+            geUi.badge.textContent = 'Daemon: RUNNING';
+            geUi.badge.style.borderColor = 'var(--green)';
+            geUi.badge.style.color = 'var(--green)';
+            geUi.btnStart.style.display = 'none';
+            geUi.btnStop.style.display = '';
+        } else {
+            geUi.badge.textContent = 'Daemon: STOPPED';
+            geUi.badge.style.borderColor = 'var(--text-light)';
+            geUi.badge.style.color = 'var(--text-light)';
+            geUi.btnStart.style.display = '';
+            geUi.btnStop.style.display = 'none';
+        }
+
+        if (data.busy) {
+            geUi.badge.textContent += ' (BUSY)';
+            geUi.badge.style.borderColor = 'var(--amber)';
+            geUi.badge.style.color = 'var(--amber)';
+        }
+
+        // Update Stats
+        if (data.state) {
+            geUi.cntFollows.textContent = data.state.totalFollowsToday || 0;
+            geUi.cntUnfollows.textContent = data.state.totalUnfollowsToday || 0;
+            geUi.cntReposts.textContent = data.state.totalRepostsToday || 0;
+        }
+        geUi.cntTracked.textContent = data.followCount || 0;
+
+        // Update Logs
+        if (data.logs) {
+            geUi.logsView.textContent = data.logs.join('\n');
+            geUi.logsView.scrollTop = geUi.logsView.scrollHeight;
+        }
+
+    } catch (err) {
+        geUi.badge.textContent = 'Daemon: OFFLINE';
+        geUi.badge.style.borderColor = 'var(--red)';
+        geUi.badge.style.color = 'var(--red)';
+    }
+}
+
+async function loadGeConfig() {
+    try {
+        const res = await fetch(`${GE_API}/config`);
+        const data = await res.json();
+        if (data.ok) {
+            geUi.configBox.value = JSON.stringify(data.config, null, 2);
+            showGeMsg('Config loaded.', 'success');
+        } else {
+            showGeMsg('Failed to load config: ' + data.error, 'error');
+        }
+    } catch(err) {
+        showGeMsg('API Offline: ' + err.message, 'error');
+    }
+}
+
+async function saveGeConfig() {
+    try {
+        const raw = geUi.configBox.value;
+        const cfg = JSON.parse(raw);
+        const res = await fetch(`${GE_API}/config`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ config: cfg })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showGeMsg('Config saved successfully.', 'success');
+            refreshGeStatus();
+        } else {
+            showGeMsg('Save failed: ' + data.error, 'error');
+        }
+    } catch(err) {
+        showGeMsg('Invalid JSON or API error: ' + err.message, 'error');
+    }
+}
+
+async function startGeDaemon() {
+    try {
+        await fetch(`${GE_API}/daemon/start`, {method: 'POST'});
+        showGeMsg('Daemon started.', 'success');
+        refreshGeStatus();
+    } catch(err) {
+        showGeMsg('Error starting daemon.', 'error');
+    }
+}
+
+async function stopGeDaemon() {
+    try {
+        await fetch(`${GE_API}/daemon/stop`, {method: 'POST'});
+        showGeMsg('Daemon stopped.', 'success');
+        refreshGeStatus();
+    } catch(err) {
+        showGeMsg('Error stopping daemon.', 'error');
+    }
+}
+
+async function runGeOnce() {
+    try {
+        showGeMsg('Triggering single run...', 'info');
+        // This blocks until done or busy
+        const res = await fetch(`${GE_API}/run-once`, {method: 'POST'});
+        const data = await res.json();
+        if (data.ok) {
+            showGeMsg('Run completed.', 'success');
+        } else {
+            showGeMsg('Run skipped/failed: ' + data.error, 'warning');
+        }
+        refreshGeStatus();
+    } catch(err) {
+        showGeMsg('Error triggering run.', 'error');
+    }
+}
+
+// Events
+geUi.btnRefresh.addEventListener('click', refreshGeStatus);
+geUi.btnLoadConfig.addEventListener('click', loadGeConfig);
+geUi.btnSaveConfig.addEventListener('click', saveGeConfig);
+geUi.btnStart.addEventListener('click', startGeDaemon);
+geUi.btnStop.addEventListener('click', stopGeDaemon);
+geUi.btnRun.addEventListener('click', runGeOnce);
+
+// Start polling when switching to tab
+ui.tabNav.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    if (btn.dataset.view === 'growthEngine') {
+        refreshGeStatus();
+        loadGeConfig();
+        if(!gePoller) gePoller = setInterval(refreshGeStatus, 2000);
+    } else {
+        if(gePoller) {
+            clearInterval(gePoller);
+            gePoller = null;
+        }
+    }
+});
+
+// Original login patch:
+const originalLoginClick = ui.btnLogin.onclick || ui.btnLogin.addEventListener || function(){};
+// We hook after the fact:
+ui.btnLogin.addEventListener('click', () => {
+    // Wait for state.session
+    setTimeout(syncCredentialsToGrowthEngine, 3000); 
+});
+

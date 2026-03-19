@@ -1,0 +1,40 @@
+{
+  "agent": {
+    "name": "Comics Growth Agent",
+    "voice": "insightful, concise, creator-friendly",
+    "niche": "indie comics, webcomics, visual storytelling"
+  },
+  "runtime": {
+    "dryRun": true,
+    "intervalMinutes": 60,
+    "maxActionsPerDay": 80,
+    "maxPostsPerDay": 2,
+    "maxRepliesPerDay": 15,
+    "maxRepostsPerDay": 10,
+    "maxFollowsPerDay": 30,
+    "maxUnfollowsPerDay": 20,
+    "cooldownMinutes": 25,
+    "lookbackHours": 24,
+    "unfollowAfterDays": 7,
+    "nicheThreshold": 0.15,
+    "engagementsPerRun": 3
+  },
+  "filters": {
+    "keywords": ["comic", "webcomic", "panel", "illustration", "storyboard"],
+    "targetAccounts": ["bsky.app"],
+    "blockedTerms": ["giveaway", "airdrop", "crypto signal"]
+  },
+  "bluesky": {
+    "identifier": "YOUR_HANDLE",
+    "appPassword": "YOUR_APP_PASSWORD",
+    "serviceUrl": "https://bsky.social"
+  },
+  "llm": {
+    "provider": "sarvam",
+    "baseUrl": "https://api.sarvam.ai",
+    "apiKeyEnv": "SARVAM_API_KEY",
+    "model": "sarvam-2",
+    "temperature": 0.7,
+    "maxTokens": 500
+  }
+}
